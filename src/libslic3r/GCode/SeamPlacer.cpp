@@ -292,11 +292,65 @@ void SeamPlacer::init(const Print& print)
 
 
 
-Point SeamPlacer::get_seam(const Layer& layer, const SeamPosition seam_position,
-               const ExtrusionLoop& loop, Point last_pos, coordf_t nozzle_dmr,
-               const PrintObject* po, bool was_clockwise, const EdgeGrid::Grid* lower_layer_edge_grid)
+void SeamPlacer::plan_perimeters(std::vector<const ExtrusionEntity*> perimeters,
+                            const Layer& layer, SeamPosition seam_position, bool external_first,
+                            Point last_pos, coordf_t nozzle_dmr, const PrintObject* po,
+                            const EdgeGrid::Grid* lower_layer_edge_grid)
 {
+    // When printing the perimeters, we want the seams on external and internal perimeters to match.
+    // We have a list of perimeters in the order to be printed. Each internal perimeter must inherit
+    // the seam from the previous external perimeter.
+
+    m_plan.clear();
+    m_plan_idx = 0;
+
+    if (perimeters.empty() || ! po)
+        return;
+
+    std::vector<size_t> external_indices;
+    m_plan.resize(perimeters.size());
+    
+    for (size_t i = 0; i < perimeters.size(); ++i) {
+        if (perimeters[i]->role() == erExternalPerimeter && perimeters[i]->is_loop()) {
+            last_pos = this->calculate_seam(
+                layer, seam_position, *dynamic_cast<const ExtrusionLoop*>(perimeters[i]), nozzle_dmr,
+                po, lower_layer_edge_grid, last_pos);
+            external_indices.emplace_back(i);
+        }
+        m_plan[i] = last_pos;
+    }
+    
+    // Now propagate the value of each external perimeter to internals.
+    for (size_t j = 0; j < external_indices.size(); ++j) {
+        size_t ext_idx = external_indices[j];
+        int incr = (external_first ? 1 : -1);
+        int i = int(ext_idx) + incr;
+        while (i>=0 && i < perimeters.size() && (j + 1 == external_indices.size() || i != external_indices[j + 1])) {
+            m_plan[i] = m_plan[ext_idx];
+            i += incr;
+        }
+    }
+
+}
+
+
+Point SeamPlacer::get_seam(const Point& last_pos)
+{
+    if (m_plan.empty() || m_plan_idx >= m_plan.size())
+    if (m_plan.empty() || m_plan_idx >= m_plan.size())
+        return last_pos;
+    return m_plan[m_plan_idx++];
+}
+
+
+// Returns a seam for an EXTERNAL perimeter.
+Point SeamPlacer::calculate_seam(const Layer& layer, const SeamPosition seam_position,
+               const ExtrusionLoop& loop, coordf_t nozzle_dmr, const PrintObject* po,
+               const EdgeGrid::Grid* lower_layer_edge_grid, Point last_pos)
+{
+    assert(loop.role() == erExternalPerimeter);
     Polygon polygon = loop.polygon();
+    bool was_clockwise = polygon.make_counter_clockwise();
     BoundingBox polygon_bb = polygon.bounding_box();
     const coord_t  nozzle_r   = coord_t(scale_(0.5 * nozzle_dmr) + 0.5);
 
@@ -438,7 +492,7 @@ Point SeamPlacer::get_seam(const Layer& layer, const SeamPosition seam_position,
             }
         }
 
-        if (seam_position == spAligned && loop.role() == erExternalPerimeter)
+        if (seam_position == spAligned)
             m_seam_history.add_seam(po, polygon.points[idx_min], polygon_bb);
 
 
@@ -466,42 +520,8 @@ Point SeamPlacer::get_seam(const Layer& layer, const SeamPosition seam_position,
         #endif
         return polygon.points[idx_min];
 
-    } else { // spRandom
-        if (po->print()->default_region_config().external_perimeters_first) {
-            if (loop.role() == erExternalPerimeter)
-                last_pos = this->get_random_seam(layer_idx, polygon, po_idx);
-            else {
-                // Internal perimeters will just use last_pos.
-            }
-        } else {
-            if (loop.loop_role() == elrContourInternalPerimeter && loop.role() != erExternalPerimeter) {
-                // This loop does not contain any other loop. Set a random position.
-                // The other loops will get a seam close to the random point chosen
-                // on the innermost contour.
-                last_pos = this->get_random_seam(layer_idx, polygon, po_idx);
-                m_last_loop_was_external = false;
-            }
-            if (loop.role() == erExternalPerimeter) {
-                if (m_last_loop_was_external) {
-                    // There was no internal perimeter before this one.
-                    last_pos = this->get_random_seam(layer_idx, polygon, po_idx);
-                } else {
-                    if (is_custom_seam_on_layer(layer_idx, po_idx)) {
-                        // There is a possibility that the loop will be influenced by custom
-                        // seam enforcer/blocker. In this case do not inherit the seam
-                        // from internal loops (which may conflict with the custom selection
-                        // and generate another random one.
-                        bool saw_custom = false;
-                        Point candidate = this->get_random_seam(layer_idx, polygon, po_idx, &saw_custom);
-                        if (saw_custom)
-                            last_pos = candidate;
-                    }
-                }
-                m_last_loop_was_external = true;
-            }
-        }
-        return last_pos;
-    }
+    } else
+        return this->get_random_seam(layer_idx, polygon, po_idx);
 }
 
 
