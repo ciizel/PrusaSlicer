@@ -2514,11 +2514,7 @@ std::string GCode::extrude_loop(ExtrusionLoop loop, std::string description, dou
     if (m_config.spiral_vase) {
         loop.split_at(last_pos, false);
     } else {
-        Point seam = m_seam_placer.get_seam(this->last_pos());
-        // Split the loop at the point with a minium penalty.
-        if (!loop.split_at_vertex(seam))
-            // The point is not in the original loop. Insert it.
-            loop.split_at(seam, true);
+        m_seam_placer.place_seam(loop, this->last_pos());
     }
 
     // clip the path to avoid the extruder to get exactly on the first point of the loop;

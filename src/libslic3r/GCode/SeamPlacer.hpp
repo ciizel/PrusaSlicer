@@ -48,12 +48,12 @@ public:
     // Subsequent calls to get_seam will return this position.
 
 
-    void plan_perimeters(std::vector<const ExtrusionEntity*> perimeters,
+    void plan_perimeters(const std::vector<const ExtrusionEntity*> perimeters,
         const Layer& layer, SeamPosition seam_position, bool external_first,
         Point last_pos, coordf_t nozzle_dmr, const PrintObject* po,
         const EdgeGrid::Grid* lower_layer_edge_grid);
 
-    Point get_seam(const Point& last_pos);
+    void place_seam(ExtrusionLoop& loop, const Point& last_pos);
     
 
     using TreeType = AABBTreeIndirect::Tree<2, coord_t>;
@@ -76,7 +76,11 @@ private:
     coordf_t m_last_print_z = -1.;
     const PrintObject* m_last_po = nullptr;
 
-    std::vector<Point> m_plan;
+    struct PointAndOffset {
+        Point pt;
+        int offset = 0;
+    };
+    std::vector<PointAndOffset> m_plan;
     size_t m_plan_idx = 0;
 
     std::vector<std::vector<CustomTrianglesPerLayer>> m_enforcers;

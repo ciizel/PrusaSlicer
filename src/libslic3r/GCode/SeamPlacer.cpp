@@ -292,7 +292,7 @@ void SeamPlacer::init(const Print& print)
 
 
 
-void SeamPlacer::plan_perimeters(std::vector<const ExtrusionEntity*> perimeters,
+void SeamPlacer::plan_perimeters(const std::vector<const ExtrusionEntity*> perimeters,
                             const Layer& layer, SeamPosition seam_position, bool external_first,
                             Point last_pos, coordf_t nozzle_dmr, const PrintObject* po,
                             const EdgeGrid::Grid* lower_layer_edge_grid)
@@ -307,39 +307,71 @@ void SeamPlacer::plan_perimeters(std::vector<const ExtrusionEntity*> perimeters,
     if (perimeters.empty() || ! po)
         return;
 
-    std::vector<size_t> external_indices;
+    std::vector<int> external_indices;
     m_plan.resize(perimeters.size());
     
-    for (size_t i = 0; i < perimeters.size(); ++i) {
+    for (int i = 0; i < int(perimeters.size()); ++i) {
         if (perimeters[i]->role() == erExternalPerimeter && perimeters[i]->is_loop()) {
             last_pos = this->calculate_seam(
                 layer, seam_position, *dynamic_cast<const ExtrusionLoop*>(perimeters[i]), nozzle_dmr,
                 po, lower_layer_edge_grid, last_pos);
             external_indices.emplace_back(i);
         }
-        m_plan[i] = last_pos;
+        m_plan[i].pt = last_pos;
+        m_plan[i].offset = 1;
     }
     
     // Now propagate the value of each external perimeter to internals.
-    for (size_t j = 0; j < external_indices.size(); ++j) {
-        size_t ext_idx = external_indices[j];
+    for (int j = 0; j < int(external_indices.size()); ++j) {
+        int ext_idx = external_indices[j];
         int incr = (external_first ? 1 : -1);
         int i = int(ext_idx) + incr;
-        while (i>=0 && i < perimeters.size() && (j + 1 == external_indices.size() || i != external_indices[j + 1])) {
-            m_plan[i] = m_plan[ext_idx];
+        //assert(m_plan[ext_idx].offset == 0.);
+        while (i>=0 && i < perimeters.size() && (j + 1 == int(external_indices.size()) || i != external_indices[j + 1])) {
+            m_plan[i].pt = m_plan[ext_idx].pt;
+            m_plan[i].offset = 0;//std::abs(ext_idx - i);
             i += incr;
         }
     }
-
 }
 
 
-Point SeamPlacer::get_seam(const Point& last_pos)
+void SeamPlacer::place_seam(ExtrusionLoop& loop, const Point& last_pos)
 {
-    if (m_plan.empty() || m_plan_idx >= m_plan.size())
-    if (m_plan.empty() || m_plan_idx >= m_plan.size())
-        return last_pos;
-    return m_plan[m_plan_idx++];
+    Point seam = last_pos;
+    if (!m_plan.empty() && m_plan_idx < m_plan.size())
+        seam = m_plan[m_plan_idx].pt;
+
+    // Split the loop at the point with a minium penalty.
+    if (!loop.split_at_vertex(seam))
+        // The point is not in the original loop. Insert it.
+        loop.split_at(seam, true);
+
+    if (m_plan_idx + 1 < int(m_plan.size()) && !m_plan[m_plan_idx + 1].offset) {
+        // next perimeter should inherit seam of this one, with a slight offset
+        Point next_seam = seam;
+        const double dist_sqr = std::pow(double(scale_(1.)), 2.);
+        double running_sqr = 0.;
+        double running_sqr_last = 0.;
+        if (!loop.paths.empty() && loop.paths.back().polyline.points.size() > 1) {
+            const ExtrusionPath& last = loop.paths.back();
+            auto it = last.polyline.points.crbegin() + 1;
+            for ( ; it != last.polyline.points.crend(); ++it) {
+                running_sqr += ((*it) - (*(it - 1))).cast<double>().squaredNorm();
+                if (running_sqr > dist_sqr)
+                    break;
+                running_sqr_last = running_sqr;
+            }
+            if (running_sqr <= dist_sqr)
+                it = last.polyline.points.crend() - 1;
+            // Now interpolate.
+            double ratio = (std::sqrt(dist_sqr) - std::sqrt(running_sqr_last)) / (std::sqrt(running_sqr)-std::sqrt(running_sqr_last));
+            next_seam = (*(it - 1)) + (((*it) - (*(it - 1))).cast<double>() *std::min(ratio, 1.)).cast<coord_t>();
+        }
+        m_plan[m_plan_idx + 1].pt = next_seam;
+    }
+ 
+    ++m_plan_idx;
 }
 
 
