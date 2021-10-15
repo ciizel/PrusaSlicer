@@ -8071,12 +8071,12 @@ msgid ""
 msgstr ""
 "G 코드에 1 분 간격으로 M73 P [퍼센트 인쇄] R[remaining time in minutes]을 방"
 "출하여 펌웨어가 정확한 잔여 시간을 표시 하도록 합니다. 현재만 Prusa i3 MK3 펌"
-"웨어는 M73를 인식 하 고 있습니다. 또한 i3 MK3 펌웨어는 자동 모드에서 M73 Qxx "
+"웨어는 M73를 인식 하 고 있습니다. 또한 i3 MK3 펌웨어는 스텔스 모드에서 M73 Qxx "
 "Sxx를 지원 합니다."
 
 #: src/libslic3r/PrintConfig.cpp:1102
 msgid "Supports stealth mode"
-msgstr "자동 모드 지원"
+msgstr "스텔스 모드 지원"
 
 #: src/libslic3r/PrintConfig.cpp:1103
 msgid "The firmware supports stealth mode"
