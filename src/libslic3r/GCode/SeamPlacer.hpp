@@ -53,7 +53,7 @@ public:
         Point last_pos, coordf_t nozzle_dmr, const PrintObject* po,
         const EdgeGrid::Grid* lower_layer_edge_grid);
 
-    void place_seam(ExtrusionLoop& loop, const Point& last_pos);
+    void place_seam(ExtrusionLoop& loop, const Point& last_pos, bool external_first, double nozzle_diameter);
     
 
     using TreeType = AABBTreeIndirect::Tree<2, coord_t>;
@@ -76,12 +76,12 @@ private:
     coordf_t m_last_print_z = -1.;
     const PrintObject* m_last_po = nullptr;
 
-    struct PointAndOffset {
+    struct SeamPoint {
         Point pt;
-        int offset = 0;
+        bool valid = false;
     };
-    std::vector<PointAndOffset> m_plan;
-    size_t m_plan_idx = 0;
+    std::vector<SeamPoint> m_plan;
+    size_t m_plan_idx;
 
     std::vector<std::vector<CustomTrianglesPerLayer>> m_enforcers;
     std::vector<std::vector<CustomTrianglesPerLayer>> m_blockers;

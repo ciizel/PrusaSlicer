@@ -2513,9 +2513,8 @@ std::string GCode::extrude_loop(ExtrusionLoop loop, std::string description, dou
     Point last_pos = this->last_pos();
     if (m_config.spiral_vase) {
         loop.split_at(last_pos, false);
-    } else {
-        m_seam_placer.place_seam(loop, this->last_pos());
-    }
+    } else
+        m_seam_placer.place_seam(loop, this->last_pos(), m_config.external_perimeters_first, EXTRUDER_CONFIG(nozzle_diameter));
 
     // clip the path to avoid the extruder to get exactly on the first point of the loop;
     // if polyline was shorter than the clipping distance we'd get a null polyline, so
@@ -2639,8 +2638,6 @@ std::string GCode::extrude_perimeters(const Print &print, const std::vector<Obje
         if (! region.perimeters.empty()) {
             m_config.apply(print.get_print_region(&region - &by_region.front()).config());
 
-            // Tell seam placer what we are about to do. It will calculate and
-            // remember seams for all the perimeters.
             m_seam_placer.plan_perimeters(std::vector<const ExtrusionEntity*>(region.perimeters.begin(), region.perimeters.end()),
                 *m_layer, m_config.seam_position,
                 m_config.external_perimeters_first, this->last_pos(), EXTRUDER_CONFIG(nozzle_diameter),
