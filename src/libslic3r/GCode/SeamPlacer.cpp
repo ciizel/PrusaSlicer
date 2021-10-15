@@ -309,7 +309,7 @@ void SeamPlacer::plan_perimeters(const std::vector<const ExtrusionEntity*> perim
 
     std::vector<int> external_indices;
     m_plan.resize(perimeters.size());
-    
+
     for (int i = 0; i < int(perimeters.size()); ++i) {
         if (perimeters[i]->role() == erExternalPerimeter && perimeters[i]->is_loop()) {
             last_pos = this->calculate_seam(
@@ -318,9 +318,9 @@ void SeamPlacer::plan_perimeters(const std::vector<const ExtrusionEntity*> perim
             external_indices.emplace_back(i);
             m_plan[i].valid = true;
         }
-        m_plan[i].pt = last_pos;        
+        m_plan[i].pt = last_pos;
     }
-    
+
     // Now propagate the value of each external perimeter to internals.
     for (int j = 0; j < int(external_indices.size()); ++j) {
         int ext_idx = external_indices[j];
@@ -341,15 +341,16 @@ void SeamPlacer::place_seam(ExtrusionLoop& loop, const Point& last_pos, bool ext
     if (! m_plan.empty() && m_plan_idx < m_plan.size()) {
 
         if (! external_first && !m_plan[m_plan_idx].valid) {
-            // In this case try to guess the seam from an external perimeter.
-            // Find the closest external seam.
+            // This is probably innermost internal perimeter. Try to guess the seam from
+            // the next external perimeter. First we need to find it:
             int next_ext_idx = m_plan_idx;
             while (++next_ext_idx < int(m_plan.size()) && ! m_plan[next_ext_idx].valid);
 
             if (next_ext_idx != int(m_plan.size())) {
-                double offset = (next_ext_idx - m_plan_idx) * scale_(seam_offset);
-
-                // We need to find closest point to m_plan[next_ext_idx].pt and travel distance 'offset' along the loop.
+                // We need to find closest point to m_plan[next_ext_idx].pt (the external seam)
+                // and travel distance 'offset' along the loop. This works best when the perimeters
+                // are straight of course.
+                // First find the line segment closest to the external seam:
                 int path_idx = 0;
                 int line_idx = 0;
                 double min_dist_sqr = std::numeric_limits<double>::max();
@@ -367,17 +368,17 @@ void SeamPlacer::place_seam(ExtrusionLoop& loop, const Point& last_pos, bool ext
                         }
                     }
                 }
+
+                // Now find a projection of the external seam
                 const Lines& lines = lines_vect[path_idx];
-
-                // TODO:
-                // vyresit vcasne spocitani edge grid
-                // vyresit fixme vyse (closest one)
-
                 Point closest = m_plan[next_ext_idx].pt.projection_onto(lines[line_idx]);
                 double dist = (closest.cast<double>() - lines[line_idx].b.cast<double>()).norm();
+
+                // And walk along the perimeter until we make enough space for
+                // seams of all perimeters beforethe external one.
+                double offset = (next_ext_idx - m_plan_idx) * scale_(seam_offset);
                 double last_offset = offset;
                 offset -= dist;
-                
                 const Point* a = &closest;
                 const Point* b = &lines[line_idx].b;
                 while (++line_idx < lines.size() && offset > 0.) {
@@ -387,8 +388,9 @@ void SeamPlacer::place_seam(ExtrusionLoop& loop, const Point& last_pos, bool ext
                     b = &lines[line_idx].b;
                 }
 
-                // Interpolate:
-                offset = std::min(0., offset); // In case that offset is still positive.
+                // We have walked far enough, too far maybe. Interpolate on the
+                // last segment to find the end precisely.
+                offset = std::min(0., offset); // In case that offset is still positive (we may have "wrapped around")
                 double ratio = last_offset / (last_offset - offset);
                 seam = (a->cast<double>() + ((b->cast<double>() - a->cast<double>()) * ratio)).cast<coord_t>();
             }
@@ -396,15 +398,17 @@ void SeamPlacer::place_seam(ExtrusionLoop& loop, const Point& last_pos, bool ext
         else
             seam = m_plan[m_plan_idx].pt;
     }
-        
+
 
     // Split the loop at the point with a minium penalty.
     if (!loop.split_at_vertex(seam))
         // The point is not in the original loop. Insert it.
         loop.split_at(seam, true);
 
+    // In case the next perimeter is not external, its seam is not yet decided.
+    // Use the seam we just placed, travel a short bit along the (current)
+    // perimeter and use the result for the next one.
     if (m_plan_idx + 1 < int(m_plan.size()) && !m_plan[m_plan_idx + 1].valid) {
-        // next perimeter should inherit seam from this one, with a slight offset
         Point next_seam = seam;
         const double dist_sqr = std::pow(double(scale_(seam_offset)), 2.);
         double running_sqr = 0.;
@@ -427,7 +431,6 @@ void SeamPlacer::place_seam(ExtrusionLoop& loop, const Point& last_pos, bool ext
         m_plan[m_plan_idx + 1].pt = next_seam;
         m_plan[m_plan_idx + 1].valid = true;
     }
- 
     ++m_plan_idx;
 }
 
